@@ -8,11 +8,10 @@ public class Order
 {
     private readonly List<OrderItem> _items = [];
 
-    public Guid Id {; }
-    public Customer Customer {; }
-    public OrderStatus Status {; private set; } = OrderStatus.Pending;
+    public Guid Id { get; }
+    public Customer Customer { get; }
+    public OrderStatus Status { get; private set; } = OrderStatus.Pending;
 
-    // Інкапсуляція колекції
     public IReadOnlyCollection<OrderItem> Items => _items.AsReadOnly();
 
     public decimal TotalAmount => _items.Sum(item => item.TotalPrice);

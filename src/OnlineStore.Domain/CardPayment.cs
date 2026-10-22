@@ -4,7 +4,7 @@ namespace OnlineStore.Domain;
 
 public class CardPayment : IPaymentMethod
 {
-    public string CardNumber {; }
+    public string CardNumber { get; }
 
     public CardPayment(string cardNumber)
     {

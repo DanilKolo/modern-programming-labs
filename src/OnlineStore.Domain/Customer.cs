@@ -4,9 +4,9 @@ namespace OnlineStore.Domain;
 
 public class Customer
 {
-    public Guid Id {; }
-    public string FullName {; }
-    public string Email {; }
+    public Guid Id { get; }
+    public string FullName { get; }
+    public string Email { get; }
 
     public Customer(Guid id, string fullName, string email)
     {

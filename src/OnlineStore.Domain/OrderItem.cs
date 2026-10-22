@@ -4,8 +4,8 @@ namespace OnlineStore.Domain;
 
 public class OrderItem
 {
-    public Product Product {; }
-    public int Quantity {; private set; }
+    public Product Product { get; }
+    public int Quantity { get; private set; }
     public decimal TotalPrice => Product.Price * Quantity;
 
     public OrderItem(Product product, int quantity)

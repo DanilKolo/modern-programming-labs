@@ -4,7 +4,7 @@ namespace OnlineStore.Domain;
 
 public class BankTransferPayment : IPaymentMethod
 {
-    public string Iban {; }
+    public string Iban { get; }
 
     public BankTransferPayment(string iban)
     {
