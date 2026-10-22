@@ -4,20 +4,12 @@ namespace OnlineStore.Domain;
 
 public class Customer
 {
-    public Guid Id { get; }
-    public string FullName { get; }
-    public string Email { get; }
-
-    public Customer(Guid id, string fullName, string email)
-    {
-        if (string.IsNullOrWhiteSpace(fullName))
-            throw new ArgumentException("ПІБ покупця не може бути порожнім.");
-
-        if (string.IsNullOrWhiteSpace(email) || !email.Contains("@"))
-            throw new ArgumentException("Вказано некоректний Email.");
-
-        Id = id;
-        FullName = fullName;
-        Email = email;
-    }
+    public Guid Id { get; init; } = Guid.NewGuid();
+    
+    // required + init гарантує обов'язковість при ініціалізації
+    public required string Name { get; init; }
+    public required string Email { get; init; }
+    
+    public Address? ShippingAddress { get; set; }
+    public string? PhoneNumber { get; set; } // Nullable Reference Type
 }
