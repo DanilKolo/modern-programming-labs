@@ -8,24 +8,22 @@ public class Order
 {
     private readonly List<OrderItem> _items = [];
 
-    public Guid Id { get; }
+    public Guid Id { get; init; } = Guid.NewGuid();
     public Customer Customer { get; }
-    public OrderStatus Status { get; private set; } = OrderStatus.Pending;
+    public OrderStatus Status {; private set; } = OrderStatus.Created;
 
     public IReadOnlyCollection<OrderItem> Items => _items.AsReadOnly();
-
     public decimal TotalAmount => _items.Sum(item => item.TotalPrice);
 
-    public Order(Guid id, Customer customer)
+    public Order(Customer customer)
     {
-        Id = id;
         Customer = customer ?? throw new ArgumentNullException(nameof(customer));
     }
 
     public void AddItem(Product product, int quantity)
     {
-        if (Status != OrderStatus.Pending)
-            throw new InvalidOperationException("Неможливо змінювати товари у замовленні, яке не знаходиться у стані Pending.");
+        if (Status != OrderStatus.Created)
+            throw new InvalidOperationException("Неможливо змінювати замовлення після його обробки.");
 
         var existingItem = _items.FirstOrDefault(i => i.Product.Id == product.Id);
         if (existingItem != null)
@@ -36,18 +34,6 @@ public class Order
         else
         {
             _items.Add(new OrderItem(product, quantity));
-        }
-    }
-
-    public void RemoveItem(Guid productId)
-    {
-        if (Status != OrderStatus.Pending)
-            throw new InvalidOperationException("Неможливо видаляти товари з замовлення у даному стані.");
-
-        var item = _items.FirstOrDefault(i => i.Product.Id == productId);
-        if (item != null)
-        {
-            _items.Remove(item);
         }
     }
 
@@ -62,17 +48,24 @@ public class Order
         if (!_items.Any())
             throw new InvalidOperationException("Неможливо оплатити порожнє замовлення.");
 
-        bool success = paymentMethod.Pay(TotalAmount);
-        if (success)
+        if (paymentMethod.Pay(TotalAmount))
         {
             Status = OrderStatus.Paid;
         }
     }
 
+    public void Ship()
+    {
+        if (Status != OrderStatus.Paid)
+            throw new InvalidOperationException("Доставити можна тільки оплачене замовлення.");
+
+        Status = OrderStatus.Shipped;
+    }
+
     public void Cancel()
     {
-        if (Status == OrderStatus.Paid)
-            throw new InvalidOperationException("Оплачене замовлення не можна скасувати.");
+        if (Status == OrderStatus.Paid || Status == OrderStatus.Shipped || Status == OrderStatus.Delivered)
+            throw new InvalidOperationException("Завершене або оплачене замовлення скасувати не можна.");
 
         Status = OrderStatus.Cancelled;
     }
