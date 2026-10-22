@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using OnlineStore.Domain;
 
 namespace OnlineStore.App;
@@ -7,57 +9,139 @@ internal class Program
 {
     private static void Main(string[] args)
     {
-        Console.WriteLine("=== Modern Programming Course: Lab 3 ===");
+        Console.WriteLine("=== Modern Programming Course: Lab 4 ===");
         Console.WriteLine("Student: Коломієць Даніл Сергійович | Group: 401-ТК | Variant: 1\n");
 
-        // 1. Використання record (Value Object) та required / init / nullable properties
-        var address = new Address("Полтава", "вул. Соборна", "14A", "36000");
+        // 1. Створення тестових покупців та товарів
+        var addr = new Address("Полтава", "Соборна", "10", "36000");
 
-        var customer = new Customer
+        var customer1 = new Customer { Name = "Даніл Коломієць", Email = "danil@example.com", ShippingAddress = addr };
+        var customer2 = new Customer { Name = "Олена Петренко", Email = "olena@example.com", ShippingAddress = addr };
+        var customer3 = new Customer { Name = "Іван Коваленко", Email = "ivan@example.com", ShippingAddress = addr };
+        var customer4 = new Customer { Name = "Марія Сидоренко", Email = "maria@example.com", ShippingAddress = addr };
+        var customer5 = new Customer { Name = "Тарас Шевченко", Email = "taras@example.com", ShippingAddress = addr };
+
+        var laptop = new Product(Guid.NewGuid(), "Ноутбук Lenovo", 25000m);
+        var phone = new Product(Guid.NewGuid(), "Смартфон Samsung", 18000m);
+        var monitor = new Product(Guid.NewGuid(), "Монітор 27\"", 8500m);
+        var mouse = new Product(Guid.NewGuid(), "Миша Logitech", 1200m);
+        var keyboard = new Product(Guid.NewGuid(), "Клавіатура Keychron", 3500m);
+        var headphones = new Product(Guid.NewGuid(), "Навушники Sony", 4200m);
+        var cable = new Product(Guid.NewGuid(), "Кабель USB-C", 300m);
+
+        // 2. Створення InMemoryRepository та заповнення тестовими замовленнями (20 шт)
+        var orderRepository = new InMemoryRepository<Order>();
+        var random = new Random(42);
+        var customers = new[] { customer1, customer2, customer3, customer4, customer5 };
+        var products = new[] { laptop, phone, monitor, mouse, keyboard, headphones, cable };
+
+        var cardPayment = new CardPayment("4149-xxxx-xxxx-1234");
+
+        for (int i = 0; i < 20; i++)
         {
-            Name = "Коломієць Даніл Сергійович",
-            Email = "kolomietc14@gmail.com",
-            ShippingAddress = address,
-            PhoneNumber = "+380991234567" // Nullable property
-        };
+            var selectedCustomer = customers[random.Next(customers.Length)];
+            var order = new Order(selectedCustomer);
 
-        Console.WriteLine($"Покупець: {customer.Name} ({customer.Email})");
-        Console.WriteLine($"Телефон: {customer.PhoneNumber ?? "Не вказано"}");
-        Console.WriteLine($"Адреса доставки: м. {customer.ShippingAddress.City}, {customer.ShippingAddress.Street}, буд. {customer.ShippingAddress.Building}\n");
+            // Додаємо від 1 до 3 випадкових товарів у замовлення
+            int itemsCount = random.Next(1, 4);
+            for (int j = 0; j < itemsCount; j++)
+            {
+                var prod = products[random.Next(products.Length)];
+                order.AddItem(prod, random.Next(1, 4));
+            }
 
-        // 2. Створення замовлення та додавання товарів
-        var laptop = new Product(Guid.NewGuid(), "Ноутбук Lenovo IdeaPad Slim 3", 22500m);
-        var mouse = new Product(Guid.NewGuid(), "Бездротова миша", 450m);
+            // Випадково оплачуємо деякі замовлення
+            if (i % 2 == 0)
+            {
+                order.Pay(cardPayment);
+            }
 
-        var order1 = new Order(customer);
-        order1.AddItem(mouse, 1); // 450 грн (< 500)
+            orderRepository.Add(order);
+        }
 
-        var order2 = new Order(customer);
-        order2.AddItem(laptop, 1); // 22 500 грн (>= 5000)
+        var orders = orderRepository.GetAll();
+        Console.WriteLine($"Усього згенеровано замовлень у репозиторії: {orders.Count}\n");
 
-        // 3. Демонстрація Pattern Matching: Relational patterns (Категорії замовлень)
-        Console.WriteLine("--- Демонстрація Relational Patterns (Категорія замовлення) ---");
-        Console.WriteLine($"Замовлення 1 (Сума: {order1.TotalAmount:C}): Категорія = {OrderAnalysisService.GetOrderCategory(order1.TotalAmount)}");
-        Console.WriteLine($"Замовлення 2 (Сума: {order2.TotalAmount:C}): Категорія = {OrderAnalysisService.GetOrderCategory(order2.TotalAmount)}\n");
+        // --- ВИКОНАННЯ 10 LINQ-ЗАПИТІВ (Варіант 1) ---
 
-        // 4. Демонстрація Switch Expression: Опис статусів
-        Console.WriteLine("--- Демонстрація Switch Expression (Статуси) ---");
-        Console.WriteLine($"Поточний статус замовлення 2: {order2.Status}");
-        Console.WriteLine($"Опис статусу: {OrderAnalysisService.GetStatusDescription(order2.Status)}");
+        // 1. Усі orders з Total > 1000
+        var ordersOver1000 = orders.Where(o => o.TotalAmount > 1000m).ToList();
+        Console.WriteLine($"1. Кількість замовлень з сумою > 1000: {ordersOver1000.Count}");
 
-        // Оплата замовлення
-        IPaymentMethod cardPayment = new CardPayment("4149-xxxx-xxxx-1234");
-        order2.Pay(cardPayment);
+        // 2. Топ-5 найдорожчих orders
+        var top5ExpensiveOrders = orders.OrderByDescending(o => o.TotalAmount).Take(5);
+        Console.WriteLine("\n2. Топ-5 найдорожчих замовлень:");
+        foreach (var o in top5ExpensiveOrders)
+        {
+            Console.WriteLine($"   - Order #{o.Id.ToString()[..8]} | Клієнт: {o.Customer.Name} | Сума: {o.TotalAmount:C}");
+        }
 
-        Console.WriteLine($"Статус після оплати: {order2.Status}");
-        Console.WriteLine($"Опис статусу: {OrderAnalysisService.GetStatusDescription(order2.Status)}\n");
+        // 3. Загальна сума продажів
+        decimal totalSales = orders.Sum(o => o.TotalAmount);
+        Console.WriteLine($"\n3. Загальна сума всіх замовлень: {totalSales:C}");
 
-        // 5. Демонстрація Property Pattern: Безкоштовна доставка (Paid + Total >= 2000)
-        Console.WriteLine("--- Демонстрація Property Pattern (Free Delivery Rule) ---");
-        bool isOrder1FreeDelivery = OrderAnalysisService.IsEligibleForFreeDelivery(order1);
-        bool isOrder2FreeDelivery = OrderAnalysisService.IsEligibleForFreeDelivery(order2);
+        // 4. Середня вартість order
+        decimal averageOrderValue = orders.Average(o => o.TotalAmount);
+        Console.WriteLine($"4. Середня вартість замовлення: {averageOrderValue:C}");
 
-        Console.WriteLine($"Замовлення 1 (Оплачено: {order1.Status == OrderStatus.Paid}, Сума: {order1.TotalAmount:C}) -> Безкоштовна доставка: {isOrder1FreeDelivery}");
-        Console.WriteLine($"Замовлення 2 (Оплачено: {order2.Status == OrderStatus.Paid}, Сума: {order2.TotalAmount:C}) -> Безкоштовна доставка: {isOrder2FreeDelivery}");
+        // 5. Кількість orders кожного customer через GroupBy
+        var ordersPerCustomer = orders
+            .GroupBy(o => o.Customer.Name)
+            .Select(g => new { CustomerName = g.Key, Count = g.Count() });
+
+        Console.WriteLine("\n5. Кількість замовлень за покупцями (GroupBy):");
+        foreach (var item in ordersPerCustomer)
+        {
+            Console.WriteLine($"   - {item.CustomerName}: {item.Count} замовлень");
+        }
+
+        // 6. Усі products з усіх orders через SelectMany
+        var allOrderedProducts = orders
+            .SelectMany(o => o.Items)
+            .Select(item => item.Product)
+            .DistinctBy(p => p.Id)
+            .ToList();
+
+        Console.WriteLine($"\n6. Унікальних продуктів, куплених у замовленнях (SelectMany): {allOrderedProducts.Count}");
+
+        // 7. Топ-3 products за проданою quantity
+        var top3ProductsByQuantity = orders
+            .SelectMany(o => o.Items)
+            .GroupBy(item => item.Product.Name)
+            .Select(g => new { ProductName = g.Key, TotalQuantity = g.Sum(i => i.Quantity) })
+            .OrderByDescending(p => p.TotalQuantity)
+            .Take(3);
+
+        Console.WriteLine("\n7. Топ-3 найпопулярніших товари за кількістю:");
+        foreach (var p in top3ProductsByQuantity)
+        {
+            Console.WriteLine($"   - {p.ProductName}: продано {p.TotalQuantity} шт.");
+        }
+
+        // 8. Customers, які витратили більше 5000
+        var VIPCustomers = orders
+            .GroupBy(o => o.Customer)
+            .Select(g => new { Customer = g.Key, TotalSpent = g.Sum(o => o.TotalAmount) })
+            .Where(c => c.TotalSpent > 5000m);
+
+        Console.WriteLine("\n8. Покупці, які витратили більше 5000 грн:");
+        foreach (var c in VIPCustomers)
+        {
+            Console.WriteLine($"   - {c.Customer.Name}: витрачено {c.TotalSpent:C}");
+        }
+
+        // 9. Перевірити через Any, чи існує order > 10000
+        bool hasHugeOrder = orders.Any(o => o.TotalAmount > 10000m);
+        Console.WriteLine($"\n9. Чи є хоча б одне замовлення > 10000 грн (Any): {hasHugeOrder}");
+
+        // 10. Створити Dictionary<CustomerId, decimal> із загальними витратами customer
+        Dictionary<Guid, decimal> customerTotalSpentDict = orders
+            .GroupBy(o => o.Customer.Id)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Sum(o => o.TotalAmount)
+            );
+
+        Console.WriteLine($"\n10. Створено Словник (Dictionary) витрат для {customerTotalSpentDict.Count} покупців.");
     }
 }
