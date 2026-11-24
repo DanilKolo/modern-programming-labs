@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using OnlineStore.Domain;
@@ -17,7 +18,10 @@ string relativeFilePath = configuration["Storage:FilePath"]
 bool writeIndented = bool.TryParse(configuration["Storage:WriteIndented"], out bool parsed) && parsed;
 string fullReportPath = Path.Combine(AppContext.BaseDirectory, relativeFilePath);
 
-// 2. Підготовка тестових даних (5 замовлень)
+string externalApiBaseUrl = configuration["ExternalApi:BaseUrl"]
+    ?? throw new InvalidOperationException("Параметр ExternalApi:BaseUrl не знайдено у конфігурації.");
+
+// 2. Демонстрація ЛР №7: формування та збереження звіту замовлень у JSON
 var customer1 = new Customer { Name = "Олена Коваленко", Email = "olena@example.com" };
 var customer2 = new Customer { Name = "Максим Бондаренко", Email = "maksym@example.com" };
 var customer3 = new Customer { Name = "Ірина Шевченко", Email = "iryna@example.com" };
@@ -51,62 +55,81 @@ order5.AddItem(laptop, 1);
 order5.Pay(new CardPayment("5375-4111-2222-9876"));
 
 var orders = new List<Order> { order1, order2, order3, order4, order5 };
-List<OrderReport> reportsToSave = orders.Select(OrderReport.FromOrder).ToList();
-
-// 3. Експорт у JSON
 var storage = new JsonOrderReportStorage(writeIndented);
+await storage.SaveAsync(fullReportPath, orders.Select(OrderReport.FromOrder));
+
+// 3. Демонстрація ЛР №8: зовнішній довідник контактів покупців через HttpClient + Task.WhenAll
+Console.WriteLine("=== Контакти покупців (зовнішній довідник) ===");
+Console.WriteLine("Loading external contacts...");
+
+using var httpClient = new HttpClient
+{
+    BaseAddress = new Uri(externalApiBaseUrl)
+};
+var contactsClient = new ExternalContactsClient(httpClient);
+int[] userIds = [1, 2, 3];
+
 try
 {
-    await storage.SaveAsync(fullReportPath, reportsToSave);
-    Console.WriteLine($"Звіт успішно збережено у файл:\n{fullReportPath}\n");
-}
-catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-{
-    Console.WriteLine($"Помилка запису файлу: {ex.Message}");
-    return;
-}
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
-// 4. Читання з JSON та підрахунок статистики (Варіант 1)
-try
-{
-    IReadOnlyList<OrderReport> loadedReports = await storage.LoadAsync(fullReportPath);
+    // Одночасне завантаження через Task.WhenAll
+    var concurrentSw = Stopwatch.StartNew();
+    IReadOnlyList<ExternalUser> concurrentUsers = await contactsClient.GetUsersConcurrentlyAsync(userIds, cts.Token);
+    concurrentSw.Stop();
 
-    Console.WriteLine("=== Зчитані замовлення зі звіту ===");
-    foreach (var item in loadedReports)
+    Console.WriteLine($"Received: {concurrentUsers.Count} (за {concurrentSw.ElapsedMilliseconds} мс)");
+    foreach (ExternalUser user in concurrentUsers)
     {
-        Console.WriteLine(
-            $"ID: {item.OrderId} | Клієнт: {item.CustomerName} | Позицій: {item.ItemsCount} | Сума: {item.Total:F2} грн | Статус: {item.Status}");
+        Console.WriteLine($"{user.Id} | {user.Name} | {user.Email}");
     }
 
-    decimal grandTotal = loadedReports.Sum(r => r.Total);
-    Console.WriteLine("-----------------------------------");
-    Console.WriteLine($"Всього замовлень у звіті: {loadedReports.Count}");
-    Console.WriteLine($"Загальна сума замовлень: {grandTotal:F2} грн\n");
-}
-catch (Exception ex) when (ex is FileNotFoundException or UnauthorizedAccessException or IOException or JsonException)
-{
-    Console.WriteLine($"Помилка під час читання звіту: {ex.Message}");
-}
+    Console.WriteLine("\nПримітка (Варіант 1): ExternalUser — це лише зовнішній DTO для довідкових контактів із API.");
+    Console.WriteLine("Він не містить бізнес-правил, адреси доставки чи історії замовлень, на відміну від сутності Customer, тому замовлення автоматично не створюються.");
 
-// 5. Демонстрація коректної обробки помилок (відсутній файл + битий JSON)
-Console.WriteLine("=== Перевірка обробки помилок ===");
-try
-{
-    string missingPath = Path.Combine(AppContext.BaseDirectory, "data", "non-existent.json");
-    await storage.LoadAsync(missingPath);
-}
-catch (FileNotFoundException ex)
-{
-    Console.WriteLine($"[Очікувано] Відсутній файл оброблено: {ex.Message}");
-}
+    // Додаткове завдання: порівняння послідовних запитів і Task.WhenAll
+    Console.WriteLine("\n=== Додаткове завдання: порівняння швидкодії ===");
+    var sequentialSw = Stopwatch.StartNew();
+    foreach (int id in userIds)
+    {
+        await contactsClient.GetUserAsync(id, cts.Token);
+    }
+    sequentialSw.Stop();
 
-try
+    Console.WriteLine($"Послідовно (3 запити по черзі): {sequentialSw.ElapsedMilliseconds} мс");
+    Console.WriteLine($"Одночасно (Task.WhenAll):       {concurrentSw.ElapsedMilliseconds} мс");
+}
+catch (OperationCanceledException)
 {
-    string brokenJsonPath = Path.Combine(AppContext.BaseDirectory, "data", "broken.json");
-    await File.WriteAllTextAsync(brokenJsonPath, "{ invalid json content ::: ");
-    await storage.LoadAsync(brokenJsonPath);
+    Console.WriteLine("[Помилка] Час очікування відповіді від зовнішнього API вичерпано або операцію скасовано.");
+}
+catch (HttpRequestException ex)
+{
+    Console.WriteLine($"[Помилка мережі] Не вдалося отримати контакти: {ex.Message}");
 }
 catch (JsonException ex)
 {
-    Console.WriteLine($"[Очікувано] Помилку формату JSON оброблено: {ex.Message}");
+    Console.WriteLine($"[Помилка JSON] Некоректний формат відповіді сервера: {ex.Message}");
+}
+
+// 4. Демонстрація обробки мережевої помилки та тайм-ауту без падіння програми
+Console.WriteLine("\n=== Перевірка обробки помилок мережі та скасування ===");
+try
+{
+    using var invalidHostClient = new HttpClient
+    {
+        BaseAddress = new Uri("https://non-existent-domain-for-lab08.invalid/")
+    };
+    var brokenContactsClient = new ExternalContactsClient(invalidHostClient);
+    using var errorCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+    await brokenContactsClient.GetUserAsync(1, errorCts.Token);
+}
+catch (HttpRequestException ex)
+{
+    Console.WriteLine($"[Очікувано] HttpRequestException оброблено: {ex.Message}");
+}
+catch (OperationCanceledException)
+{
+    Console.WriteLine("[Очікувано] OperationCanceledException оброблено (тайм-аут).");
 }
